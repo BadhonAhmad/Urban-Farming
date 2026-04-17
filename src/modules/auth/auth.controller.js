@@ -4,9 +4,9 @@ const logger = require("../../utils/logger");
 
 const register = async (req, res, next) => {
   try {
-    const user = await authService.register(req.body);
-    logger.info(`User registered: ${user.email}`);
-    return apiResponse.success(res, user, "Registration successful", 201);
+    const result = await authService.register(req.body, res);
+    logger.info(`User registered: ${result.user.email}`);
+    return apiResponse.success(res, result, "Registration successful", 201);
   } catch (error) {
     next(error);
   }
@@ -15,9 +15,30 @@ const register = async (req, res, next) => {
 const login = async (req, res, next) => {
   try {
     const { email, password } = req.body;
-    const result = await authService.login(email, password);
+    const result = await authService.login(email, password, res);
     logger.info(`User logged in: ${email}`);
     return apiResponse.success(res, result, "Login successful");
+  } catch (error) {
+    next(error);
+  }
+};
+
+const refreshToken = async (req, res, next) => {
+  try {
+    const token = req.cookies.refreshToken;
+    const result = await authService.refreshToken(token, res);
+    return apiResponse.success(res, result, "Token refreshed");
+  } catch (error) {
+    next(error);
+  }
+};
+
+const logout = async (req, res, next) => {
+  try {
+    const token = req.cookies.refreshToken;
+    await authService.logout(token, res);
+    logger.info(`User logged out: ${req.user?.email || "unknown"}`);
+    return apiResponse.success(res, null, "Logged out");
   } catch (error) {
     next(error);
   }
@@ -32,4 +53,4 @@ const getProfile = async (req, res, next) => {
   }
 };
 
-module.exports = { register, login, getProfile };
+module.exports = { register, login, refreshToken, logout, getProfile };

@@ -30,13 +30,15 @@ const authenticate = require("../../middlewares/authenticate");
  *             role: "CUSTOMER"
  *     responses:
  *       201:
- *         description: User registered
+ *         description: User registered — access token in body, refresh token in httpOnly cookie
  *         content:
  *           application/json:
  *             example:
  *               success: true
  *               message: Registration successful
- *               data: { id: "uuid", name: "John Doe", email: "john@example.com", role: "CUSTOMER", vendorProfile: null }
+ *               data:
+ *                 user: { id: "uuid", name: "John Doe", email: "john@example.com", role: "CUSTOMER" }
+ *                 accessToken: "eyJhbGciOi..."
  *       409:
  *         description: Duplicate email
  *         content:
@@ -51,7 +53,7 @@ router.post("/register", [authLimiter, ...registerValidator, validate], authCont
  * @swagger
  * /auth/login:
  *   post:
- *     summary: Login and get JWT token
+ *     summary: Login and get access token + refresh cookie
  *     tags: [Auth]
  *     requestBody:
  *       required: true
@@ -68,13 +70,15 @@ router.post("/register", [authLimiter, ...registerValidator, validate], authCont
  *             password: "password123"
  *     responses:
  *       200:
- *         description: Login successful
+ *         description: Login successful — access token in body, refresh token in httpOnly cookie
  *         content:
  *           application/json:
  *             example:
  *               success: true
  *               message: Login successful
- *               data: { user: { id: "uuid", name: "John Doe", email: "john@example.com", role: "CUSTOMER" }, token: "eyJhbGciOi..." }
+ *               data:
+ *                 user: { id: "uuid", name: "John Doe", email: "john@example.com", role: "CUSTOMER" }
+ *                 accessToken: "eyJhbGciOi..."
  *       401:
  *         description: Invalid credentials
  *         content:
@@ -84,6 +88,50 @@ router.post("/register", [authLimiter, ...registerValidator, validate], authCont
  *       429: { $ref: '#/components/responses/RateLimited' }
  */
 router.post("/login", [authLimiter, ...loginValidator, validate], authController.login);
+
+/**
+ * @swagger
+ * /auth/refresh:
+ *   post:
+ *     summary: Refresh access token using httpOnly cookie
+ *     description: Sends a new access token and rotates the refresh token (old one is revoked).
+ *     tags: [Auth]
+ *     responses:
+ *       200:
+ *         description: Token refreshed — new access token in body, new refresh cookie set
+ *         content:
+ *           application/json:
+ *             example:
+ *               success: true
+ *               message: Token refreshed
+ *               data:
+ *                 user: { id: "uuid", name: "John Doe", email: "john@example.com", role: "CUSTOMER" }
+ *                 accessToken: "eyJhbGciOi..."
+ *       401:
+ *         description: Invalid, expired, or revoked refresh token
+ *         content:
+ *           application/json:
+ *             example: { success: false, message: "Refresh token reuse detected — all sessions revoked" }
+ *       429: { $ref: '#/components/responses/RateLimited' }
+ */
+router.post("/refresh", [authLimiter], authController.refreshToken);
+
+/**
+ * @swagger
+ * /auth/logout:
+ *   post:
+ *     summary: Logout — revokes refresh token and clears cookie
+ *     tags: [Auth]
+ *     security: [{ BearerAuth: [] }]
+ *     responses:
+ *       200:
+ *         description: Logged out
+ *         content:
+ *           application/json:
+ *             example: { success: true, message: "Logged out", data: null }
+ *       401: { $ref: '#/components/responses/Unauthorized' }
+ */
+router.post("/logout", [authenticate], authController.logout);
 
 /**
  * @swagger

@@ -1,22 +1,25 @@
 const prisma = require("../../config/database");
+const cache = require("../../utils/cache");
 
 const getMyProfile = async (userId) => {
-  const profile = await prisma.vendorProfile.findUnique({
-    where: { userId },
-    include: {
-      user: { select: { name: true, email: true } },
-      produce: true,
-      sustainabilityCert: true,
-    },
+  return cache.wrap(`vendor:${userId}`, 120, async () => {
+    const profile = await prisma.vendorProfile.findUnique({
+      where: { userId },
+      include: {
+        user: { select: { name: true, email: true } },
+        produce: true,
+        sustainabilityCert: true,
+      },
+    });
+
+    if (!profile) {
+      const err = new Error("Vendor profile not found");
+      err.statusCode = 404;
+      throw err;
+    }
+
+    return profile;
   });
-
-  if (!profile) {
-    const err = new Error("Vendor profile not found");
-    err.statusCode = 404;
-    throw err;
-  }
-
-  return profile;
 };
 
 const updateProfile = async (userId, data) => {
@@ -27,7 +30,7 @@ const updateProfile = async (userId, data) => {
     throw err;
   }
 
-  return prisma.vendorProfile.update({
+  const result = await prisma.vendorProfile.update({
     where: { userId },
     data: {
       ...(data.farmName !== undefined && { farmName: data.farmName }),
@@ -38,25 +41,33 @@ const updateProfile = async (userId, data) => {
       sustainabilityCert: true,
     },
   });
+
+  await cache.del("vendor:*");
+  await cache.del("vendors:*");
+  return result;
 };
 
 const getAllVendors = async (page = 1, limit = 10) => {
-  const skip = (page - 1) * limit;
+  const key = `vendors:all:${page}:${limit}`;
 
-  const [vendors, total] = await Promise.all([
-    prisma.vendorProfile.findMany({
-      skip,
-      take: limit,
-      include: {
-        user: { select: { name: true, email: true } },
-        sustainabilityCert: true,
-      },
-      orderBy: { createdAt: "desc" },
-    }),
-    prisma.vendorProfile.count(),
-  ]);
+  return cache.wrap(key, 120, async () => {
+    const skip = (page - 1) * limit;
 
-  return { vendors, total, page, limit };
+    const [vendors, total] = await Promise.all([
+      prisma.vendorProfile.findMany({
+        skip,
+        take: limit,
+        include: {
+          user: { select: { name: true, email: true } },
+          sustainabilityCert: true,
+        },
+        orderBy: { createdAt: "desc" },
+      }),
+      prisma.vendorProfile.count(),
+    ]);
+
+    return { vendors, total, page, limit };
+  });
 };
 
 const approveVendor = async (vendorId) => {
@@ -67,11 +78,15 @@ const approveVendor = async (vendorId) => {
     throw err;
   }
 
-  return prisma.vendorProfile.update({
+  const result = await prisma.vendorProfile.update({
     where: { id: vendorId },
     data: { certificationStatus: "APPROVED" },
     include: { user: { select: { name: true, email: true } } },
   });
+
+  await cache.del("vendor:*");
+  await cache.del("vendors:*");
+  return result;
 };
 
 const rejectVendor = async (vendorId) => {
@@ -82,11 +97,15 @@ const rejectVendor = async (vendorId) => {
     throw err;
   }
 
-  return prisma.vendorProfile.update({
+  const result = await prisma.vendorProfile.update({
     where: { id: vendorId },
     data: { certificationStatus: "REJECTED" },
     include: { user: { select: { name: true, email: true } } },
   });
+
+  await cache.del("vendor:*");
+  await cache.del("vendors:*");
+  return result;
 };
 
 const submitCertification = async (userId, data) => {
@@ -115,6 +134,8 @@ const submitCertification = async (userId, data) => {
     data: { certificationStatus: "PENDING" },
   });
 
+  await cache.del("vendor:*");
+  await cache.del("vendors:*");
   return cert;
 };
 
@@ -126,11 +147,15 @@ const approveCertification = async (vendorId) => {
     throw err;
   }
 
-  return prisma.vendorProfile.update({
+  const result = await prisma.vendorProfile.update({
     where: { id: vendorId },
     data: { certificationStatus: "APPROVED" },
     include: { sustainabilityCert: true, user: { select: { name: true, email: true } } },
   });
+
+  await cache.del("vendor:*");
+  await cache.del("vendors:*");
+  return result;
 };
 
 const rejectCertification = async (vendorId) => {
@@ -141,11 +166,15 @@ const rejectCertification = async (vendorId) => {
     throw err;
   }
 
-  return prisma.vendorProfile.update({
+  const result = await prisma.vendorProfile.update({
     where: { id: vendorId },
     data: { certificationStatus: "REJECTED" },
     include: { sustainabilityCert: true, user: { select: { name: true, email: true } } },
   });
+
+  await cache.del("vendor:*");
+  await cache.del("vendors:*");
+  return result;
 };
 
 module.exports = {

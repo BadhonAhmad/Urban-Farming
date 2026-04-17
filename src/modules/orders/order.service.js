@@ -1,4 +1,5 @@
 const prisma = require("../../config/database");
+const cache = require("../../utils/cache");
 
 const createOrder = async (userId, data) => {
   const produce = await prisma.produce.findUnique({
@@ -26,13 +27,13 @@ const createOrder = async (userId, data) => {
 
   const totalPrice = Number(produce.price) * data.quantity;
 
-  return prisma.$transaction(async (tx) => {
+  const order = await prisma.$transaction(async (tx) => {
     await tx.produce.update({
       where: { id: data.produceId },
       data: { availableQuantity: { decrement: data.quantity } },
     });
 
-    const order = await tx.order.create({
+    return tx.order.create({
       data: {
         userId,
         produceId: data.produceId,
@@ -46,29 +47,35 @@ const createOrder = async (userId, data) => {
         vendor: { select: { farmName: true, farmLocation: true } },
       },
     });
-
-    return order;
   });
+
+  await cache.del("orders:*");
+  await cache.del("produce:*");
+  return order;
 };
 
 const getMyOrders = async (userId, page = 1, limit = 10) => {
-  const skip = (page - 1) * limit;
+  const key = `orders:user:${userId}:${page}:${limit}`;
 
-  const [orders, total] = await Promise.all([
-    prisma.order.findMany({
-      where: { userId },
-      skip,
-      take: limit,
-      include: {
-        produce: { select: { name: true, category: true, price: true } },
-        vendor: { select: { farmName: true, farmLocation: true } },
-      },
-      orderBy: { orderDate: "desc" },
-    }),
-    prisma.order.count({ where: { userId } }),
-  ]);
+  return cache.wrap(key, 120, async () => {
+    const skip = (page - 1) * limit;
 
-  return { orders, total, page, limit };
+    const [orders, total] = await Promise.all([
+      prisma.order.findMany({
+        where: { userId },
+        skip,
+        take: limit,
+        include: {
+          produce: { select: { name: true, category: true, price: true } },
+          vendor: { select: { farmName: true, farmLocation: true } },
+        },
+        orderBy: { orderDate: "desc" },
+      }),
+      prisma.order.count({ where: { userId } }),
+    ]);
+
+    return { orders, total, page, limit };
+  });
 };
 
 const getVendorOrders = async (userId, page = 1, limit = 10) => {
@@ -79,60 +86,72 @@ const getVendorOrders = async (userId, page = 1, limit = 10) => {
     throw err;
   }
 
-  const skip = (page - 1) * limit;
+  const key = `orders:vendor:${vendor.id}:${page}:${limit}`;
 
-  const [orders, total] = await Promise.all([
-    prisma.order.findMany({
-      where: { vendorId: vendor.id },
-      skip,
-      take: limit,
-      include: {
-        produce: { select: { name: true, category: true } },
-        user: { select: { name: true, email: true } },
-      },
-      orderBy: { orderDate: "desc" },
-    }),
-    prisma.order.count({ where: { vendorId: vendor.id } }),
-  ]);
+  return cache.wrap(key, 120, async () => {
+    const skip = (page - 1) * limit;
 
-  return { orders, total, page, limit };
+    const [orders, total] = await Promise.all([
+      prisma.order.findMany({
+        where: { vendorId: vendor.id },
+        skip,
+        take: limit,
+        include: {
+          produce: { select: { name: true, category: true } },
+          user: { select: { name: true, email: true } },
+        },
+        orderBy: { orderDate: "desc" },
+      }),
+      prisma.order.count({ where: { vendorId: vendor.id } }),
+    ]);
+
+    return { orders, total, page, limit };
+  });
 };
 
 const getAllOrders = async (page = 1, limit = 10) => {
-  const skip = (page - 1) * limit;
+  const key = `orders:all:${page}:${limit}`;
 
-  const [orders, total] = await Promise.all([
-    prisma.order.findMany({
-      skip,
-      take: limit,
-      include: {
-        produce: { select: { name: true, category: true } },
-        user: { select: { name: true, email: true } },
-        vendor: { select: { farmName: true, farmLocation: true } },
-      },
-      orderBy: { orderDate: "desc" },
-    }),
-    prisma.order.count(),
-  ]);
+  return cache.wrap(key, 120, async () => {
+    const skip = (page - 1) * limit;
 
-  return { orders, total, page, limit };
+    const [orders, total] = await Promise.all([
+      prisma.order.findMany({
+        skip,
+        take: limit,
+        include: {
+          produce: { select: { name: true, category: true } },
+          user: { select: { name: true, email: true } },
+          vendor: { select: { farmName: true, farmLocation: true } },
+        },
+        orderBy: { orderDate: "desc" },
+      }),
+      prisma.order.count(),
+    ]);
+
+    return { orders, total, page, limit };
+  });
 };
 
 const getOrderById = async (orderId, userId, role) => {
-  const order = await prisma.order.findUnique({
-    where: { id: orderId },
-    include: {
-      produce: { select: { name: true, category: true, price: true } },
-      user: { select: { name: true, email: true } },
-      vendor: { select: { farmName: true, farmLocation: true } },
-    },
-  });
+  const order = await cache.wrap(`orders:${orderId}`, 120, async () => {
+    const result = await prisma.order.findUnique({
+      where: { id: orderId },
+      include: {
+        produce: { select: { name: true, category: true, price: true } },
+        user: { select: { name: true, email: true } },
+        vendor: { select: { farmName: true, farmLocation: true } },
+      },
+    });
 
-  if (!order) {
-    const err = new Error("Order not found");
-    err.statusCode = 404;
-    throw err;
-  }
+    if (!result) {
+      const err = new Error("Order not found");
+      err.statusCode = 404;
+      throw err;
+    }
+
+    return result;
+  });
 
   if (role === "ADMIN") return order;
 
@@ -179,7 +198,6 @@ const updateOrderStatus = async (orderId, status, userId, role) => {
     throw err;
   }
 
-  // Customer can only cancel their own PENDING orders
   if (role === "CUSTOMER") {
     if (status !== "CANCELLED") {
       const err = new Error("Customers can only cancel orders");
@@ -198,7 +216,6 @@ const updateOrderStatus = async (orderId, status, userId, role) => {
     }
   }
 
-  // Vendor can only update orders for their own produce
   if (role === "VENDOR") {
     const vendor = await prisma.vendorProfile.findUnique({ where: { userId } });
     if (!vendor || order.vendorId !== vendor.id) {
@@ -208,9 +225,10 @@ const updateOrderStatus = async (orderId, status, userId, role) => {
     }
   }
 
-  // Restore quantity on cancellation
+  let result;
+
   if (status === "CANCELLED") {
-    return prisma.$transaction([
+    result = await prisma.$transaction([
       prisma.order.update({
         where: { id: orderId },
         data: { status },
@@ -224,16 +242,20 @@ const updateOrderStatus = async (orderId, status, userId, role) => {
         data: { availableQuantity: { increment: order.quantity } },
       }),
     ]);
+  } else {
+    result = await prisma.order.update({
+      where: { id: orderId },
+      data: { status },
+      include: {
+        produce: { select: { name: true } },
+        vendor: { select: { farmName: true } },
+      },
+    });
   }
 
-  return prisma.order.update({
-    where: { id: orderId },
-    data: { status },
-    include: {
-      produce: { select: { name: true } },
-      vendor: { select: { farmName: true } },
-    },
-  });
+  await cache.del("orders:*");
+  await cache.del("produce:*");
+  return result;
 };
 
 module.exports = {

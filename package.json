@@ -11,18 +11,25 @@
     "db:seed": "node prisma/seed.js",
     "db:studio": "prisma studio"
   },
-  "keywords": ["urban-farming", "express", "prisma", "postgresql"],
+  "keywords": [
+    "urban-farming",
+    "express",
+    "prisma",
+    "postgresql"
+  ],
   "author": "MakTech",
   "license": "ISC",
   "dependencies": {
     "@prisma/client": "^6.6.0",
     "bcryptjs": "^2.4.3",
+    "cookie-parser": "^1.4.7",
     "cors": "^2.8.5",
     "dotenv": "^16.4.7",
     "express": "^5.1.0",
     "express-rate-limit": "^7.5.0",
     "express-validator": "^7.2.1",
     "helmet": "^8.1.0",
+    "ioredis": "^5.10.1",
     "jsonwebtoken": "^9.0.2",
     "prisma": "^6.6.0",
     "swagger-jsdoc": "^6.2.5",
