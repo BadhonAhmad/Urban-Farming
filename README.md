@@ -12,7 +12,6 @@ A production-grade **RESTful API** for an Interactive Urban Farming Platform bui
 | Framework | Express 5 |
 | ORM | Prisma 6 |
 | Database | PostgreSQL (Supabase) |
-| Caching | Redis (ioredis) |
 | Authentication | JWT (access + refresh token rotation) |
 | Validation | express-validator |
 | Logging | Winston |
@@ -30,8 +29,7 @@ A production-grade **RESTful API** for an Interactive Urban Farming Platform bui
 - **Order Management** — Place orders with atomic stock decrement, role-based views (customer/vendor/admin), order state machine with valid transitions, auto stock restore on cancellation.
 - **Community Forum** — Public post browsing with search, authenticated CRUD, owner-or-admin authorization.
 - **Plant Tracking** — Growth stage and health monitoring linked to confirmed rental bookings.
-- **Redis Caching** — Cache-aside pattern with TTL tiers (5 min public, 2 min authenticated), pattern-based invalidation on writes, graceful fallback when Redis is unavailable.
-- **Database Indexing** — 15 composite indexes optimized for actual query patterns (foreign keys, pagination sorts, filter columns).
+- **Database Indexing** — 18 composite indexes optimized for actual query patterns (foreign keys, pagination sorts, filter columns).
 - **Rate Limiting** — 5 tiers: auth (10/15m), global API (100/15m), orders (20/15m), bookings (15/15m), uploads (5/hr).
 - **API Documentation** — Interactive Swagger UI at `/api/docs` with full request/response examples.
 
@@ -47,7 +45,6 @@ UrbanFarming/
 ├── src/
 │   ├── config/
 │   │   ├── database.js        # PrismaClient singleton
-│   │   ├── redis.js           # ioredis client singleton
 │   │   └── swagger.js         # OpenAPI spec configuration
 │   ├── middlewares/
 │   │   ├── authenticate.js    # JWT verification + user lookup
@@ -65,7 +62,6 @@ UrbanFarming/
 │   │   └── tracking/          # Plant tracking module
 │   ├── utils/
 │   │   ├── apiResponse.js     # Standardized JSON response helpers
-│   │   ├── cache.js           # Redis cache-aside utility
 │   │   ├── jwt.js             # JWT sign/verify for access & refresh tokens
 │   │   ├── logger.js          # Winston logger (console + file)
 │   │   └── validators.js      # express-validator chains
@@ -82,7 +78,7 @@ Each module follows the **layered architecture** pattern:
 module/
 ├── module.routes.js       # Route definitions + Swagger docs
 ├── module.controller.js   # Request/response handling
-└── module.service.js      # Business logic + DB queries + caching
+└── module.service.js      # Business logic + DB queries
 ```
 
 ---
@@ -93,7 +89,6 @@ module/
 
 - Node.js 18+
 - PostgreSQL database (or Supabase account)
-- Redis (optional — caching degrades gracefully without it)
 
 ### Installation
 
@@ -126,9 +121,6 @@ JWT_SECRET=your_jwt_secret
 JWT_ACCESS_EXPIRES_IN=15m
 JWT_REFRESH_SECRET=your_jwt_refresh_secret
 JWT_REFRESH_EXPIRES_IN=7d
-
-# Redis (optional — caching disabled if not set)
-REDIS_URL=redis://localhost:6379
 
 # Server
 PORT=5000
@@ -335,19 +327,6 @@ The server starts at `http://localhost:5000`.
                     │  rotated)     │
                     └──────────────┘
 ```
-
----
-
-## Caching Strategy
-
-| Tier | Endpoints | TTL | Example Key |
-|------|-----------|-----|-------------|
-| Public (Tier 1) | Produce list/detail, Rental spaces list/detail | 5 min | `produce:list:APPROVED:Vegetables:1:10` |
-| Authenticated (Tier 2) | Orders, Bookings, Forum, Tracking, Vendors | 2 min | `orders:user:uuid:1:10` |
-
-**Invalidation:** Every write operation (create, update, delete) triggers pattern-based cache deletion (e.g., `cacheDel("produce:*")`).
-
-**Fallback:** If Redis is unavailable, all cache calls become no-ops and the API queries the database directly.
 
 ---
 

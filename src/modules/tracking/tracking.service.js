@@ -1,5 +1,4 @@
 const prisma = require("../../config/database");
-const cache = require("../../utils/cache");
 
 const addTracking = async (userId, data) => {
   const space = await prisma.rentalSpace.findUnique({
@@ -19,7 +18,7 @@ const addTracking = async (userId, data) => {
     throw err;
   }
 
-  const result = await prisma.plantTracking.create({
+  return prisma.plantTracking.create({
     data: {
       userId,
       rentalSpaceId: data.rentalSpaceId,
@@ -32,51 +31,40 @@ const addTracking = async (userId, data) => {
       rentalSpace: { select: { location: true, size: true } },
     },
   });
-
-  await cache.del("tracking:*");
-  return result;
 };
 
 const getMyPlants = async (userId, page = 1, limit = 10) => {
-  const key = `tracking:user:${userId}:${page}:${limit}`;
+  const skip = (page - 1) * limit;
 
-  return cache.wrap(key, 120, async () => {
-    const skip = (page - 1) * limit;
-
-    const [plants, total] = await Promise.all([
-      prisma.plantTracking.findMany({
-        where: { userId },
-        skip,
-        take: limit,
-        include: {
-          rentalSpace: { select: { location: true, size: true } },
-        },
-        orderBy: { lastUpdated: "desc" },
-      }),
-      prisma.plantTracking.count({ where: { userId } }),
-    ]);
-
-    return { plants, total, page, limit };
-  });
-};
-
-const getPlantById = async (userId, trackingId) => {
-  const plant = await cache.wrap(`tracking:${trackingId}`, 120, async () => {
-    const result = await prisma.plantTracking.findUnique({
-      where: { id: trackingId },
+  const [plants, total] = await Promise.all([
+    prisma.plantTracking.findMany({
+      where: { userId },
+      skip,
+      take: limit,
       include: {
         rentalSpace: { select: { location: true, size: true } },
       },
-    });
+      orderBy: { lastUpdated: "desc" },
+    }),
+    prisma.plantTracking.count({ where: { userId } }),
+  ]);
 
-    if (!result) {
-      const err = new Error("Plant tracking record not found");
-      err.statusCode = 404;
-      throw err;
-    }
+  return { plants, total, page, limit };
+};
 
-    return result;
+const getPlantById = async (userId, trackingId) => {
+  const plant = await prisma.plantTracking.findUnique({
+    where: { id: trackingId },
+    include: {
+      rentalSpace: { select: { location: true, size: true } },
+    },
   });
+
+  if (!plant) {
+    const err = new Error("Plant tracking record not found");
+    err.statusCode = 404;
+    throw err;
+  }
 
   if (plant.userId !== userId) {
     const err = new Error("You can only view your own plant records");
@@ -101,7 +89,7 @@ const updatePlantStatus = async (userId, trackingId, data) => {
     throw err;
   }
 
-  const result = await prisma.plantTracking.update({
+  return prisma.plantTracking.update({
     where: { id: trackingId },
     data: {
       ...(data.growthStage !== undefined && { growthStage: data.growthStage }),
@@ -112,9 +100,6 @@ const updatePlantStatus = async (userId, trackingId, data) => {
       rentalSpace: { select: { location: true, size: true } },
     },
   });
-
-  await cache.del("tracking:*");
-  return result;
 };
 
 const deleteTracking = async (userId, trackingId) => {
@@ -132,7 +117,6 @@ const deleteTracking = async (userId, trackingId) => {
   }
 
   await prisma.plantTracking.delete({ where: { id: trackingId } });
-  await cache.del("tracking:*");
   return { id: trackingId };
 };
 

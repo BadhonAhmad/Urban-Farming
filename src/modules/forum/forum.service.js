@@ -1,8 +1,7 @@
 const prisma = require("../../config/database");
-const cache = require("../../utils/cache");
 
 const createPost = async (userId, data) => {
-  const result = await prisma.communityPost.create({
+  return prisma.communityPost.create({
     data: {
       userId,
       title: data.title,
@@ -12,61 +11,51 @@ const createPost = async (userId, data) => {
       user: { select: { name: true, email: true } },
     },
   });
-
-  await cache.del("forum:*");
-  return result;
 };
 
 const getPosts = async (page = 1, limit = 10, search = "") => {
-  const searchKey = search || "none";
-  const key = `forum:list:${searchKey}:${page}:${limit}`;
+  const skip = (page - 1) * limit;
 
-  return cache.wrap(key, 120, async () => {
-    const skip = (page - 1) * limit;
+  const where = search
+    ? {
+        OR: [
+          { title: { contains: search, mode: "insensitive" } },
+          { postContent: { contains: search, mode: "insensitive" } },
+        ],
+      }
+    : {};
 
-    const where = search
-      ? {
-          OR: [
-            { title: { contains: search, mode: "insensitive" } },
-            { postContent: { contains: search, mode: "insensitive" } },
-          ],
-        }
-      : {};
+  const [posts, total] = await Promise.all([
+    prisma.communityPost.findMany({
+      where,
+      skip,
+      take: limit,
+      include: {
+        user: { select: { name: true } },
+      },
+      orderBy: { postDate: "desc" },
+    }),
+    prisma.communityPost.count({ where }),
+  ]);
 
-    const [posts, total] = await Promise.all([
-      prisma.communityPost.findMany({
-        where,
-        skip,
-        take: limit,
-        include: {
-          user: { select: { name: true } },
-        },
-        orderBy: { postDate: "desc" },
-      }),
-      prisma.communityPost.count({ where }),
-    ]);
-
-    return { posts, total, page, limit };
-  });
+  return { posts, total, page, limit };
 };
 
 const getPostById = async (id) => {
-  return cache.wrap(`forum:${id}`, 120, async () => {
-    const post = await prisma.communityPost.findUnique({
-      where: { id },
-      include: {
-        user: { select: { name: true, email: true } },
-      },
-    });
-
-    if (!post) {
-      const err = new Error("Post not found");
-      err.statusCode = 404;
-      throw err;
-    }
-
-    return post;
+  const post = await prisma.communityPost.findUnique({
+    where: { id },
+    include: {
+      user: { select: { name: true, email: true } },
+    },
   });
+
+  if (!post) {
+    const err = new Error("Post not found");
+    err.statusCode = 404;
+    throw err;
+  }
+
+  return post;
 };
 
 const updatePost = async (userId, postId, data, role) => {
@@ -83,7 +72,7 @@ const updatePost = async (userId, postId, data, role) => {
     throw err;
   }
 
-  const result = await prisma.communityPost.update({
+  return prisma.communityPost.update({
     where: { id: postId },
     data: {
       ...(data.title !== undefined && { title: data.title }),
@@ -93,9 +82,6 @@ const updatePost = async (userId, postId, data, role) => {
       user: { select: { name: true } },
     },
   });
-
-  await cache.del("forum:*");
-  return result;
 };
 
 const deletePost = async (userId, postId, role) => {
@@ -113,7 +99,6 @@ const deletePost = async (userId, postId, role) => {
   }
 
   await prisma.communityPost.delete({ where: { id: postId } });
-  await cache.del("forum:*");
   return { id: postId };
 };
 
