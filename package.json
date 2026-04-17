@@ -1,0 +1,35 @@
+{
+  "name": "urban-farming-platform",
+  "version": "1.0.0",
+  "description": "Interactive Urban Farming Platform - Backend API",
+  "main": "src/server.js",
+  "scripts": {
+    "dev": "nodemon src/server.js",
+    "start": "node src/server.js",
+    "db:migrate": "prisma migrate dev",
+    "db:generate": "prisma generate",
+    "db:seed": "node prisma/seed.js",
+    "db:studio": "prisma studio"
+  },
+  "keywords": ["urban-farming", "express", "prisma", "postgresql"],
+  "author": "MakTech",
+  "license": "ISC",
+  "dependencies": {
+    "@prisma/client": "^6.6.0",
+    "bcryptjs": "^2.4.3",
+    "cors": "^2.8.5",
+    "dotenv": "^16.4.7",
+    "express": "^5.1.0",
+    "express-rate-limit": "^7.5.0",
+    "express-validator": "^7.2.1",
+    "helmet": "^8.1.0",
+    "jsonwebtoken": "^9.0.2",
+    "prisma": "^6.6.0",
+    "swagger-jsdoc": "^6.2.5",
+    "swagger-ui-express": "^5.0.1",
+    "winston": "^3.17.0"
+  },
+  "devDependencies": {
+    "nodemon": "^3.1.9"
+  }
+}
